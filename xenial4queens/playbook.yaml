@@ -1,0 +1,50 @@
+- name: Install testing stuff
+  hosts: all
+  become: yes
+  vars:
+    LC_ALL: C
+  tasks:
+  - name: Install py2.7
+    apt:
+      name: python-minimal
+      state: present
+      update_cache: yes
+  - name: Install venv
+    apt:
+      name: python-virtualenv
+      state: present
+  - name: Download pip for py2
+    get_url:
+      url: https://bootstrap.pypa.io/pip/2.7/get-pip.py
+      dest: /tmp/get-pip.py
+  - name: Install pip
+    command: python2.7 /tmp/get-pip.py
+  - name: Update pip
+    command: python -m pip install --upgrade pip
+  - name: Install all other needed
+    apt:
+      pkg:
+        - python2.7-dev
+        - python3.5-dev
+        - python3-pip
+        - tox
+        - build-essential
+        - libpcre3-dev
+        - silversearcher-ag
+  - name: Update pip3.5
+    command: python3.5 -m pip install -U "pip < 21.0"
+  - name: And setuptools
+    command: python3.5 -m pip install -U "setuptools == 45"
+- name: Install SSH keys
+  hosts: all
+  tasks:
+  - name: Install private key
+    ansible.builtin.copy:
+      src: ~/.ssh/id_rsa
+      dest: ~/.ssh/id_rsa
+      mode: '0600'
+  - name: Install public key
+    ansible.builtin.copy:
+      src: ~/.ssh/id_rsa.pub
+      dest: ~/.ssh/id_rsa.pub
+      mode: '0644'
