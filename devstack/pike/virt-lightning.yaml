@@ -1,0 +1,5 @@
+- name: devstack_pike
+  distro: ubuntu-16.04
+  memory: 8192
+  root_disk_size: 30
+  vcpus: 2

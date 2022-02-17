@@ -38,11 +38,6 @@
 - name: Install SSH keys
   hosts: all
   tasks:
-  - name: Install private key
-    ansible.builtin.copy:
-      src: ~/.ssh/id_rsa
-      dest: ~/.ssh/id_rsa
-      mode: '0600'
   - name: Install public key
     ansible.builtin.copy:
       src: ~/.ssh/id_rsa.pub

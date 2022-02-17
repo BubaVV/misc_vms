@@ -4,18 +4,23 @@
   vars:
     LC_ALL: C
   tasks:
-  - name: Install dependencies
+  - name: Install py2.7
     apt:
+      name: python-minimal
+      state: present
       update_cache: yes
-      pkg:
-        - acl
-        - python3-virtualenv
-        - python3-pip
-        - iptables
-        - arptables
-        - ebtables
+  - name: Install venv
+    apt:
+      name: python-virtualenv
+      state: present
+  - name: Download pip for py2
+    get_url:
+      url: https://bootstrap.pypa.io/pip/2.7/get-pip.py
+      dest: /tmp/get-pip.py
+  - name: Install pip
+    command: python2.7 /tmp/get-pip.py
   - name: Update pip
-    command: python3 -m pip install --upgrade "pip<20.3"
+    command: python -m pip install --upgrade pip
   - name: Make sure we have a 'wheel' group
     group:
       name: wheel
@@ -46,7 +51,7 @@
   become: yes
   become_user: stack
   vars:
-    branch: stable/rocky
+    branch: stable/pike
     LC_ALL: C
   tasks:
     - name: Clone devstack
