@@ -1,5 +1,5 @@
 - name: Install testing stuff
-  hosts: all
+  hosts: xenial4queens
   become: yes
   vars:
     LC_ALL: C
@@ -36,7 +36,7 @@
   - name: And setuptools
     command: python3.5 -m pip install -U "setuptools == 45"
 - name: Install SSH keys
-  hosts: all
+  hosts: xenial4queens
   tasks:
   - name: Install public key
     ansible.builtin.copy:
