@@ -1,0 +1,97 @@
+- name: Prepare user, etc.
+  hosts: all
+  become: yes
+  vars:
+    LC_ALL: C
+  tasks:
+  - name: Install dependencies
+    apt:
+      update_cache: yes
+      pkg:
+        - acl
+        - python3-virtualenv
+        - python3-pip
+        - iptables
+        - arptables
+        - ebtables
+  - name: Delete various python modules installed by apt
+    apt:
+      state: absent
+      pkg:
+        - python3-simplejson
+        - python3-pyasn1-modules
+  - name: Setup ebtables
+    shell: |
+      update-alternatives --set iptables /usr/sbin/iptables-legacy || true
+      update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy || true
+      update-alternatives --set arptables /usr/sbin/arptables-legacy || true
+      update-alternatives --set ebtables /usr/sbin/ebtables-legacy || true
+  - name: Update pip
+    command: python3 -m pip install --upgrade "pip<20.3"
+  - name: Make sure we have a 'wheel' group
+    group:
+      name: wheel
+      state: present
+  - name: Allow 'wheel' group to have passwordless sudo
+    lineinfile:
+      dest: /etc/sudoers
+      state: present
+      regexp: '^%wheel'
+      line: '%wheel ALL=(ALL) NOPASSWD: ALL'
+      validate: 'visudo -cf %s'
+  - name: Create stack user
+    ansible.builtin.user:
+      name: stack
+      shell: /bin/bash
+      groups: wheel
+      append: yes
+      create_home: yes
+      home: /opt/stack
+  - name: Enable passwordless SSH to it
+    authorized_key:
+      user: stack
+      state: present
+      key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa.pub') }}"
+
+- name: Prepare devstack dir
+  hosts: all
+  become: yes
+  become_user: stack
+  vars:
+    branch: stable/victoria
+    LC_ALL: C
+  tasks:
+    - name: Check if devstack dir exists
+      stat: path=/opt/stack/devstack
+      register: p
+    - name: Clone devstack
+      ansible.builtin.git:
+        repo: https://review.opendev.org/openstack/devstack
+        dest: /opt/stack/devstack
+        version: "{{ branch }}"
+      when: not p.stat.exists
+    - name: Add non-merged-yet fix
+      shell: |
+        cd /opt/stack/devstack
+        git fetch https://review.opendev.org/openstack/devstack refs/changes/56/853756/1
+        git checkout FETCH_HEAD
+    - name: Check /etc/gitconfig
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /etc/gitconfig
+        state: touch
+    - name: Copy file with owner and permissions to controller
+      ansible.builtin.copy:
+        src: confs/local.conf
+        dest: /opt/stack/devstack/local.conf
+    - name: Do unstack
+      command: ./unstack.sh
+      args:
+        chdir: /opt/stack/devstack
+      poll: 0
+    - name: Do stack
+      command: ./stack.sh
+      args:
+        chdir: /opt/stack/devstack
+      poll: 0
