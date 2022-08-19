@@ -61,11 +61,26 @@
     branch: stable/victoria
     LC_ALL: C
   tasks:
+    - name: Check if devstack dir exists
+      stat: path=/opt/stack/devstack
+      register: p
     - name: Clone devstack
       ansible.builtin.git:
         repo: https://review.opendev.org/openstack/devstack
         dest: /opt/stack/devstack
         version: "{{ branch }}"
+      when: not p.stat.exists
+    - name: Add non-merged-yet fix
+      shell: |
+        cd /opt/stack/devstack
+        git fetch https://review.opendev.org/openstack/devstack refs/changes/56/853756/1
+        git checkout FETCH_HEAD
+    - name: Check /etc/gitconfig
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /etc/gitconfig
+        state: touch
     - name: Copy file with owner and permissions to controller
       ansible.builtin.copy:
         src: confs/local.conf
