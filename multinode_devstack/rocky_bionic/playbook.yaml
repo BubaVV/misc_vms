@@ -1,0 +1,148 @@
+- name: Setting up keys
+  hosts: 127.0.0.1
+  connection: local
+  tasks:
+  - name: Make dir for keys
+    ansible.builtin.file:
+      path: /tmp/devstack_keys
+      state: directory
+  - name: Cleaning it
+    ansible.builtin.file:
+      path: "{{ item }}"
+      state: absent
+    with_items:
+      - /tmp/devstack_keys/id_rsa
+      - /tmp/devstack_keys/id_rsa.pub
+  - name: Generate key
+    command: ssh-keygen -b 2048 -t rsa -f /tmp/devstack_keys/id_rsa -q -N ""
+
+- name: Prepare user, etc.
+  hosts: all
+  become: yes
+  vars:
+    LC_ALL: C
+  tasks:
+  - name: Install dependencies
+    apt:
+      update_cache: yes
+      pkg:
+        - acl
+        - python3-virtualenv
+        - python3-pip
+        - iptables
+        - arptables
+  - name: Update pip
+    command: python3 -m pip install --upgrade "pip<20.3"
+  - name: Make sure we have a 'wheel' group
+    group:
+      name: wheel
+      state: present
+  - name: Make sure we have a 'wheel' group
+    group:
+      name: wheel
+      state: present
+  - name: Allow 'wheel' group to have passwordless sudo
+    lineinfile:
+      dest: /etc/sudoers
+      state: present
+      regexp: '^%wheel'
+      line: '%wheel ALL=(ALL) NOPASSWD: ALL'
+      validate: 'visudo -cf %s'
+  - name: Create stack user
+    ansible.builtin.user:
+      name: stack
+      shell: /bin/bash
+      groups: wheel
+      append: yes
+      create_home: yes
+      home: /opt/stack
+  - name: Build hosts file
+    lineinfile:
+      dest: /etc/hosts
+      regexp: '.*{{ item }}$'
+      line: '{{ hostvars[item].ansible_default_ipv4.address }} {{item}}'
+      state: present
+    with_items: '{{ groups["all"] }}'
+  - name: Pass key to hosts
+    authorized_key:
+      user: root
+      state: present
+      key: "{{ lookup('file', '/tmp/devstack_keys/id_rsa.pub') }}"
+  - name: Copy private key
+    ansible.builtin.copy:
+      src: /tmp/devstack_keys/id_rsa
+      dest: /root/.ssh/id_rsa
+      mode: '0600'
+  - name: Copy public key to root
+    ansible.builtin.copy:
+      src: /tmp/devstack_keys/id_rsa.pub
+      dest: /root/.ssh/id_rsa.pub
+      mode: '0644'
+  - name: Delete old stack keys
+    ansible.builtin.file:
+      path: /opt/stack/.ssh
+      state: absent
+  - name: Make dir for stack keys
+    ansible.builtin.file:
+      path: /opt/stack/.ssh
+      state: directory
+  - name: Enable auth for root->stack connection
+    authorized_key:
+      user: stack
+      state: present
+      key: "{{ lookup('file', '/tmp/devstack_keys/id_rsa.pub') }}"
+  - name: And enabling known_host for stack...
+    become: true
+    become_user: stack
+    shell: ssh-keyscan {{ item }} >> /opt/stack/.ssh/known_hosts
+    loop: "{{ groups['all'] }}"
+  - name: ...and root
+    shell: ssh-keyscan {{ item }} >> /root/.ssh/known_hosts
+    loop: "{{ groups['all'] }}"
+
+
+- name: Prepare devstack dir
+  hosts: all
+  become: yes
+  become_user: stack
+  vars: 
+    branch: stable/rocky
+    LC_ALL: C
+  tasks:
+    - name: Clone devstack
+      ansible.builtin.git:
+        repo: https://review.opendev.org/openstack/devstack
+        dest: /opt/stack/devstack
+        version: "{{ branch }}"
+    - name: Copy file with owner and permissions to controller
+      when: ansible_hostname == 'controller'
+      ansible.builtin.copy:
+        src: confs/controller_local.conf
+        dest: /opt/stack/devstack/local.conf
+    - name: Copy file with owner and permissions to compute
+      when: "'subnode' in inventory_hostname"
+      ansible.builtin.copy:
+        src: confs/compute_local.conf
+        dest: /opt/stack/devstack/local.conf
+    - name: Do unstack
+      command: ./unstack.sh
+      args:
+        chdir: /opt/stack/devstack
+      poll: 0
+    - name: Do stack on controller
+      when: ansible_hostname == 'controller'
+      command: ./stack.sh
+      args:
+        chdir: /opt/stack/devstack
+      poll: 0
+    - name: Do stack on computes
+      when: "'subnode' in inventory_hostname"
+      command: ./stack.sh
+      args:
+        chdir: /opt/stack/devstack
+      poll: 0
+    - name: Add computes to cell
+      when: ansible_hostname == 'controller'
+      command: ./tools/discover_hosts.sh
+      args:
+        chdir: /opt/stack/devstack
