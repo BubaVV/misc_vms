@@ -70,11 +70,6 @@
         dest: /opt/stack/devstack
         version: "{{ branch }}"
       when: not p.stat.exists
-    - name: Add non-merged-yet fix
-      shell: |
-        cd /opt/stack/devstack
-        git fetch https://review.opendev.org/openstack/devstack refs/changes/51/863451/1
-        git checkout FETCH_HEAD
     - name: Check /etc/gitconfig
       become: true
       become_user: root
